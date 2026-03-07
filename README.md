@@ -61,6 +61,22 @@ The `--pre` flag formats messages as fixed-width text:
 telegram-send --pre "monospace"
 ```
 
+To send a message to a specific chat id without changing the configuration:
+``` shell
+telegram-send --chat-id -1001234567890 "Hello"
+```
+
+To send a message to a chat id by alias (the mapping should be in the configuration):
+``` shell
+telegram-send --alias channel "Hello"
+```
+To use an alias, you must define an `[aliases]` block in the configuration file (`~/.config/telegram-send.conf` by default), mapping the alias to a specific chat ID:
+```ini
+[aliases]
+channel = -1001234567890
+group = -1009876543210
+```
+
 To send a message without link previews:
 ``` shell
 telegram-send --disable-web-page-preview "https://github.com/rahiel/telegram-send"
