@@ -93,6 +93,8 @@ async def run():
     parser.add_argument("--timeout", help="Set the read timeout for network operations. (in seconds)",
                         type=float, default=30., action="store")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument("--chat-id", help="Target chat id to send messages to, bypassing the configured chat id", dest="chat_id")
+    parser.add_argument("--alias", help="Target chat alias to send messages to, bypassing the configured chat id. The mapping is stored in the configuration.", dest="alias")
     args = parser.parse_args()
 
     conf : list[str | None]
@@ -130,7 +132,7 @@ async def run():
         args.message = [message] + args.message
 
     try:
-        await delete(args.delete, conf=conf[0])
+        await delete(args.delete, conf=conf[0], chat_id=args.chat_id, alias=args.alias)
         message_ids = []
         for c in conf:
             message_ids += await send(
@@ -148,7 +150,9 @@ async def run():
                 audios=args.audio,
                 captions=args.caption,
                 locations=args.location,
-                timeout=args.timeout
+                timeout=args.timeout,
+                chat_id=args.chat_id,
+                alias=args.alias
             )
         if args.showids and message_ids:
             smessage_ids = [str(m) for m in message_ids]
@@ -170,7 +174,7 @@ async def run():
 async def send(*,
          messages=None, files=None, images=None, stickers=None, animations=None, videos=None, audios=None,
          captions=None, locations=None, conf=None, parse_mode=None, pre=False, silent=False,
-         disable_web_page_preview=False, timeout=30):
+         disable_web_page_preview=False, timeout=30, chat_id=None, alias=None):
     """Send data over Telegram. All arguments are optional.
 
     Always use this function with explicit keyword arguments. So
@@ -206,8 +210,10 @@ async def send(*,
     - silent (bool): Send silently without sound.
     - disable_web_page_preview (bool): Disables web page previews for all links in the messages.
     - timeout (int|float): The read timeout for network connections in seconds.
+    - chat_id (str): Target chat id to send messages to, bypassing the configured chat id.
+    - alias (str): Target chat alias to send messages to, bypassing the configured chat id. The mapping is stored in the configuration.
     """
-    settings = get_config_settings(conf)
+    settings = get_config_settings(conf, override_chat_id=chat_id, override_alias=alias)
     token = settings.token
     chat_id = settings.chat_id
     reply_to_message_id = settings.reply_to_message_id
@@ -323,7 +329,7 @@ async def send(*,
     return message_ids
 
 
-async def delete(message_ids, conf=None, timeout=30):
+async def delete(message_ids, conf=None, timeout=30, chat_id=None, alias=None):
     """Delete messages that have been sent before over Telegram. Restrictions given by Telegram API apply.
 
     Note that Telegram restricts this to messages which have been sent during the last 48 hours.
@@ -335,8 +341,10 @@ async def delete(message_ids, conf=None, timeout=30):
     - conf (str): Path of configuration file to use. Will use the default config if not specified.
                   `~` expands to user's home directory.
     - timeout (int|float): The read timeout for network connections in seconds.
+    - chat_id (str): Target chat id to delete messages from, bypassing the configured chat id.
+    - alias (str): Target chat alias to delete messages from.
     """
-    settings = get_config_settings(conf)
+    settings = get_config_settings(conf, override_chat_id=chat_id, override_alias=alias)
     token = settings.token
     chat_id = settings.chat_id
     bot = telegram.Bot(token)
@@ -557,7 +565,7 @@ class Settings(NamedTuple):
     reply_to_message_id: int | str | None
 
 
-def get_config_settings(conf=None) -> Settings:
+def get_config_settings(conf=None, override_chat_id=None, override_alias=None) -> Settings:
     conf = expanduser(conf) if conf else get_config_path()
     config = configparser.ConfigParser()
     if not config.read(conf) or not config.has_section("telegram"):
@@ -568,10 +576,18 @@ def get_config_settings(conf=None) -> Settings:
         raise ConfigError(f"Missing options in config: {', '.join(missing_options)}")
 
     token = config.get("telegram", "token")
-    chat = config.get("telegram", "chat_id")
+    if override_chat_id:
+        chat = override_chat_id
+    elif override_alias:
+        if config.has_section("aliases") and config.has_option("aliases", override_alias):
+            chat = config.get("aliases", override_alias)
+        else:
+            raise ConfigError(f"Alias '{override_alias}' not found in config: {conf}")
+    else:
+        chat = config.get("telegram", "chat_id")
     reply = config.get("telegram", "reply_to_message_id", fallback=None)
 
-    chat_id = int(chat) if chat.isdigit() else chat
+    chat_id = int(chat) if str(chat).lstrip('-').isdigit() else chat
     reply_to_message_id = int(reply) if reply and reply.isdigit() else reply
     return Settings(token=token, chat_id=chat_id, reply_to_message_id=reply_to_message_id)
 
