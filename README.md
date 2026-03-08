@@ -70,7 +70,7 @@ To send a message to a chat id by alias (the mapping should be in the configurat
 ``` shell
 telegram-send --alias channel "Hello"
 ```
-To use an alias, you must define an `[aliases]` block in the configuration file (`~/.config/telegram-send.conf` by default), mapping the alias to a specific chat ID:
+To use an alias, you must define an `[aliases]` block in the configuration file (`~/.config/telegram-send.conf` by default, or `%LOCALAPPDATA%\telegram-send\telegram-send.conf` on Windows), mapping the alias to a specific chat ID:
 ```ini
 [aliases]
 channel = -1001234567890
