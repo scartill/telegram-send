@@ -17,6 +17,7 @@
 import argparse
 import asyncio
 import configparser
+import os
 import re
 import sys
 from copy import deepcopy
@@ -373,14 +374,16 @@ async def configure(conf=None, channel=False, group=False, fm_integration=False)
     contact_url = "https://telegram.me/"
     root_topic_message = None
 
-    print(f"Talk with the {markup('BotFather', 'cyan')} on Telegram ({contact_url}BotFather), "
-          "create a bot and insert the token")
-    try:
-        token = input(markup(prompt, "magenta")).strip()
-    except UnicodeEncodeError:
-        # some users can only display ASCII
-        prompt = "> "
-        token = input(markup(prompt, "magenta")).strip()
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    if not token:
+        print(f"Talk with the {markup('BotFather', 'cyan')} on Telegram ({contact_url}BotFather), "
+              "create a bot and insert the token")
+        try:
+            token = input(markup(prompt, "magenta")).strip()
+        except UnicodeEncodeError:
+            # some users can only display ASCII
+            prompt = "> "
+            token = input(markup(prompt, "magenta")).strip()
 
     try:
         bot = telegram.Bot(token)
@@ -487,10 +490,13 @@ async def configure(conf=None, channel=False, group=False, fm_integration=False)
 
     config = configparser.ConfigParser()
 
+    config_data = {"chat_id": chat_id}
+    if not os.environ.get("TELEGRAM_BOT_TOKEN"):
+        config_data["TOKEN"] = token
     if root_topic_message is not None and isinstance(root_topic_message, telegram.Message):
-        config["telegram"] = {"TOKEN": token, "chat_id": chat_id, "reply_to_message_id": root_topic_message.message_id}
-    else:
-        config["telegram"] = {"TOKEN": token, "chat_id": chat_id}
+        config_data["reply_to_message_id"] = root_topic_message.message_id
+
+    config["telegram"] = config_data
     conf_dir = dirname(conf)
     if conf_dir:
         makedirs(conf_dir, exist_ok=True)
@@ -568,24 +574,44 @@ class Settings(NamedTuple):
 def get_config_settings(conf=None, override_chat_id=None, override_alias=None) -> Settings:
     conf = expanduser(conf) if conf else get_config_path()
     config = configparser.ConfigParser()
-    if not config.read(conf) or not config.has_section("telegram"):
-        raise ConfigError(f"Config not found: {conf}")
 
-    missing_options = set(["token", "chat_id"]) - set(config.options("telegram"))
-    if len(missing_options) > 0:
-        raise ConfigError(f"Missing options in config: {', '.join(missing_options)}")
+    # Allow reading token from env instead of config file
+    env_token = os.environ.get("TELEGRAM_BOT_TOKEN")
 
-    token = config.get("telegram", "token")
+    has_config = config.read(conf) and config.has_section("telegram")
+
+    if not has_config:
+        if not env_token:
+            raise ConfigError(f"Config not found: {conf}")
+
+    required_options = {"chat_id"}
+    if not env_token:
+        required_options.add("token")
+
+    if has_config:
+        missing_options = set(required_options) - set(config.options("telegram"))
+        if len(missing_options) > 0:
+            raise ConfigError(f"Missing options in config: {', '.join(missing_options)}")
+
+    if has_config and not env_token:
+        token = config.get("telegram", "token")
+    else:
+        token = env_token
+
     if override_chat_id:
         chat = override_chat_id
     elif override_alias:
-        if config.has_section("aliases") and config.has_option("aliases", override_alias):
+        if has_config and config.has_section("aliases") and config.has_option("aliases", override_alias):
             chat = config.get("aliases", override_alias)
         else:
             raise ConfigError(f"Alias '{override_alias}' not found in config: {conf}")
     else:
-        chat = config.get("telegram", "chat_id")
-    reply = config.get("telegram", "reply_to_message_id", fallback=None)
+        if has_config and config.has_option("telegram", "chat_id"):
+            chat = config.get("telegram", "chat_id")
+        else:
+            raise ConfigError(f"Missing options in config: chat_id")
+
+    reply = config.get("telegram", "reply_to_message_id", fallback=None) if has_config else None
 
     chat_id = int(chat) if str(chat).lstrip('-').isdigit() else chat
     reply_to_message_id = int(reply) if reply and reply.isdigit() else reply

@@ -77,6 +77,12 @@ channel = -1001234567890
 group = -1009876543210
 ```
 
+To configure and use the bot token securely without storing it in a plain-text configuration file, you can set the `TELEGRAM_BOT_TOKEN` environment variable. If this is present, telegram-send will use it during `telegram-send --configure` and skip prompting you for the token. The token will not be saved into the configuration file.
+``` shell
+export TELEGRAM_BOT_TOKEN="123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789"
+telegram-send --configure
+```
+
 To send a message without link previews:
 ``` shell
 telegram-send --disable-web-page-preview "https://github.com/rahiel/telegram-send"
